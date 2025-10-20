@@ -44,7 +44,8 @@ class Task
             'title' => $this->title,
             'description' => $this->description,
             'status' => $this->status,
-            'creation_date' => $this->creation_date
+            'creation_date' => $this->creation_date,
+            'modification_date' => $this->modification_date
         ];
 
         // Création d’un objet "BulkWrite"
@@ -91,31 +92,176 @@ class Task
 
             // Pour chaque document renvoyé, on crée un objet Task
             foreach ($result as $data) {
-                if (isset($data->modification_date)) {
-                    $tasks[] = new Task(
-                        $data->_id,
-                        $data->title,
-                        $data->description,
-                        $data->status,
-                        $data->creation_date,
-                        $data->modification_date
-                    );
-                } else {
-                    $tasks[] = new Task(
-                        $data->_id,
-                        $data->title,
-                        $data->description,
-                        $data->status,
-                        $data->creation_date,
-                        null
-                    );
-                }
+                $tasks[] = new Task(
+                    $data->_id,
+                    $data->title,
+                    $data->description,
+                    $data->status,
+                    $data->creation_date,
+                    $data->modification_date
+                );
             }
 
             // Retourne le tableau d’objets Task
             return $tasks;
         } catch (\Exception $e) {
             // En cas d’erreur, on renvoie un tableau vide
+            return [];
+        }
+    }
+
+    /**
+     * Récupère une tâche spécifique selon son ID
+     */
+    public function getTaskById(): ?Task
+    {
+        // Récupère la connexion à MongoDB (via ma classe Database)
+        $mongo = Database::getConnection();
+        // Nom de la base et de la collection (équivalent des tables en SQL)
+        $namedatabase = 'toDoListPoles';
+        $nameCollection = 'task';
+
+        //l'id de notre objet courant
+        $id = $this->id;
+
+        // Le filtre "_id" permet de cibler un document précis
+        // On doit transformer l'id en objet MongoDB\BSON\ObjectID
+        $filter = ['_id' => new \MongoDB\BSON\ObjectID($id)];
+        $query = new Query($filter);
+
+        try {
+            // Exécute la requête et récupère un curseurr = objet qui contient les résultats d’une requête
+            $cursor = $mongo->executeQuery($namedatabase . "." . $nameCollection, $query);
+
+            // Convertit le curseur en tableau de résultats
+            $result = $cursor->toArray();
+
+            // Si on trouve un résultat, on crée un objet Task
+            if (!empty($result)) {
+                return new Task(
+                    $result[0]->_id,
+                    $result[0]->title,
+                    $result[0]->description,
+                    $result[0]->status,
+                    $result[0]->creation_date,
+                    $result[0]->modification_date
+                );
+            }
+
+            // Si rien n’est trouvé
+            return null;
+        } catch (\Exception $e) {
+            // En cas d’erreur, on renvoie un tableau vide
+            return null;
+        }
+    }
+
+    public function editTask()
+    {
+        // Récupère la connexion à MongoDB (via ma classe Database)
+        $mongo = Database::getConnection();
+        // Nom de la base et de la collection (équivalent des tables en SQL)
+        $namedatabase = 'toDoListPoles';
+        $nameCollection = 'task';
+
+        //l'id de notre objet courant
+        $id = $this->id;
+        // Données à mettre à jour
+        $data = [
+            'title' => $this->title,
+            'description' => $this->description,
+            'status' => $this->status,
+            'creation_date' => $this->creation_date,
+            'modification_date' => $this->modification_date
+        ];
+
+        // Création de l’opération de mise à jour
+        $bulk = new BulkWrite();
+
+        // On recherche le document à modifier via son _id
+        $filter = ['_id' => new \MongoDB\BSON\ObjectID($id)];
+
+        // L’opérateur "$set" permet de modifier uniquement les champs précisés
+        $bulk->update($filter, ['$set' => $data]);
+
+        try {
+            $mongo->executeBulkWrite($namedatabase . "." . $nameCollection, $bulk);
+            // Retourne true si la mise à jour a réussi
+            return true;
+        } catch (Exception $e) {
+            // Retourne false en cas d'erreur
+            return false;
+        }
+    }
+
+    /**
+     * Supprime une tâche de la base MongoDB
+     */
+    public function deleteTask()
+    {
+        // Récupère la connexion à MongoDB (via ma classe Database)
+        $mongo = Database::getConnection();
+        // Nom de la base et de la collection (équivalent des tables en SQL)
+        $namedatabase = 'toDoListPoles';
+        $nameCollection = 'task';
+
+        $id = $this->id;
+        // Création d'un objet BulkWrite pour la suppression
+        $bulk = new BulkWrite();
+        // Spécifier le filtre pour trouver le document à supprimer par ID
+        $filter = ['_id' => new \MongoDB\BSON\ObjectID($id)];
+        // Ajouter l'opération de suppression
+        $bulk->delete($filter);
+        try {
+            $mongo->executeBulkWrite($namedatabase . "." . $nameCollection, $bulk);
+            // Retourne true si la mise à jour a réussi
+            return true;
+        } catch (Exception $e) {
+            // Retourne false en cas d'erreur
+            return false;
+        }
+    }
+
+    public function getTasksByStatus(string $status): array
+    {
+        // Récupère la connexion à MongoDB (via ma classe Database)
+        $mongo = Database::getConnection();
+        // Nom de la base et de la collection (équivalent des tables en SQL)
+        $namedatabase = 'toDoListPoles';
+        $nameCollection = 'task';
+
+        // 🔍 Création du filtre : on ne récupère que les tâches avec le statut demandé
+        $filter = ['status' => $status];
+
+        // Création de la requête MongoDB avec le filtre
+        $query = new Query($filter);
+
+        try {
+            // Exécute la requête et récupère un "curseur" (ensemble de résultats potentiellement volumineux)
+            $cursor = $mongo->executeQuery($namedatabase . "." . $nameCollection, $query);
+
+            // Convertit le curseur en tableau PHP classique
+            $result = $cursor->toArray();
+
+            // Tableau qui contiendra les objets Task
+            $tasks = [];
+
+            // Pour chaque document retourné, on instancie un objet Task
+            foreach ($result as $data) {
+                $tasks[] = new Task(
+                    $data->_id,
+                    $data->title,
+                    $data->description,
+                    $data->status,
+                    $data->creation_date,
+                    $data->modification_date
+                );
+            }
+
+            // Retourne le tableau de tâches
+            return $tasks;
+        } catch (\Exception $e) {
+            // En cas d’erreur, on retourne un tableau vide pour éviter de casser le code
             return [];
         }
     }
